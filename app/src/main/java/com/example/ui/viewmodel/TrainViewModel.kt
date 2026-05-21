@@ -4,9 +4,11 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.SavedTrain
+import com.example.data.TrainCatalogItem
 import com.example.data.TrainDatabase
 import com.example.data.TrainRepository
 import com.example.network.TrainApiService
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +21,13 @@ sealed interface SearchUiState {
     object Loading : SearchUiState
     data class Success(val response: com.example.network.TrainResponse) : SearchUiState
     data class Error(val message: String) : SearchUiState
+}
+
+sealed interface RouteSearchUiState {
+    object Idle : RouteSearchUiState
+    object Loading : RouteSearchUiState
+    data class Success(val trains: List<TrainCatalogItem>) : RouteSearchUiState
+    data class Error(val message: String) : RouteSearchUiState
 }
 
 class TrainViewModel(application: Application) : AndroidViewModel(application) {
@@ -42,6 +51,64 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _searchUiState = MutableStateFlow<SearchUiState>(SearchUiState.Idle)
     val searchUiState: StateFlow<SearchUiState> = _searchUiState.asStateFlow()
+
+    // Route search states ("To & From")
+    private val _fromQuery = MutableStateFlow("")
+    val fromQuery: StateFlow<String> = _fromQuery.asStateFlow()
+
+    private val _toQuery = MutableStateFlow("")
+    val toQuery: StateFlow<String> = _toQuery.asStateFlow()
+
+    private val _routeSearchUiState = MutableStateFlow<RouteSearchUiState>(RouteSearchUiState.Idle)
+    val routeSearchUiState: StateFlow<RouteSearchUiState> = _routeSearchUiState.asStateFlow()
+
+    fun updateFromQuery(query: String) {
+        _fromQuery.value = query
+    }
+
+    fun updateToQuery(query: String) {
+        _toQuery.value = query
+    }
+
+    fun swapStations() {
+        val temp = _fromQuery.value
+        _fromQuery.value = _toQuery.value
+        _toQuery.value = temp
+    }
+
+    fun searchRoutes(from: String, to: String) {
+        val cleanedFrom = from.trim()
+        val cleanedTo = to.trim()
+        if (cleanedFrom.isEmpty() || cleanedTo.isEmpty()) {
+            _routeSearchUiState.value = RouteSearchUiState.Error("Please enter both Source and Destination stations.")
+            return
+        }
+
+        _routeSearchUiState.value = RouteSearchUiState.Loading
+
+        viewModelScope.launch {
+            // Simulate realistic network API latency for delightful UX
+            delay(800)
+            try {
+                val results = repository.searchTrainsBetweenStations(cleanedFrom, cleanedTo)
+                _routeSearchUiState.value = RouteSearchUiState.Success(results)
+            } catch (e: Exception) {
+                _routeSearchUiState.value = RouteSearchUiState.Error(
+                    e.localizedMessage ?: "Failed to find trains. Please check station names."
+                )
+            }
+        }
+    }
+
+    fun clearRouteSearch() {
+        _fromQuery.value = ""
+        _toQuery.value = ""
+        _routeSearchUiState.value = RouteSearchUiState.Idle
+    }
+
+    fun getFullTrainCatalog(): List<TrainCatalogItem> {
+        return repository.getTrainCatalog()
+    }
 
     fun updateSearchQuery(query: String) {
         _searchQuery.value = query

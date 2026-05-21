@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -39,10 +40,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.SavedTrain
+import com.example.data.TrainCatalogItem
 import com.example.network.StationStatus
 import com.example.network.TrainResponse
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
 import com.example.ui.theme.TransitAccent
 import com.example.ui.viewmodel.SearchUiState
+import com.example.ui.viewmodel.RouteSearchUiState
 import com.example.ui.viewmodel.TrainViewModel
 import kotlinx.coroutines.launch
 
@@ -71,6 +77,15 @@ fun TrainStatusScreen(
     
     var selectedTab by remember { mutableIntStateOf(0) }
 
+    // Dialog & menu states
+    val context = LocalContext.current
+    val sharedPreferences = remember { context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE) }
+    val termsAccepted = remember { sharedPreferences.getBoolean("terms_accepted_dont_show", false) }
+    
+    var showTermsDialog by remember { mutableStateOf(!termsAccepted) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+
     // Synchronize tab view when tracking is triggered successfully
     LaunchedEffect(searchState) {
         if (searchState is SearchUiState.Success || searchState is SearchUiState.Error || searchState is SearchUiState.Loading) {
@@ -78,9 +93,101 @@ fun TrainStatusScreen(
         }
     }
 
+    // Delayed trigger for Update Dialog if Terms are already accepted/dismissed on startup
+    LaunchedEffect(Unit) {
+        if (termsAccepted) {
+            kotlinx.coroutines.delay(1200)
+            showUpdateDialog = true
+        }
+    }
+
+    if (showTermsDialog) {
+        TermsAndConditionsDialog(
+            sharedPreferences = sharedPreferences,
+            onDismiss = { showTermsDialog = false }
+        )
+    }
+
+    if (showUpdateDialog) {
+        UpdateDialog(
+            onDismiss = { showUpdateDialog = false }
+        )
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            TopAppBar(
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Place,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            text = "Where is my Train",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showMenu = !showMenu }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More options"
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Terms & Conditions") },
+                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                            onClick = {
+                                showMenu = false
+                                showTermsDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Check for Updates") },
+                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.secondary) },
+                            onClick = {
+                                showMenu = false
+                                showUpdateDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Made by SUDEEP (GitHub)") },
+                            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) },
+                            onClick = {
+                                showMenu = false
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/SUDEEPBOTS"))
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("Unable to open browser.")
+                                    }
+                                }
+                            }
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
+            )
+        },
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -107,6 +214,21 @@ fun TrainStatusScreen(
                     onClick = { selectedTab = 1 },
                     icon = {
                         Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Route Finder"
+                        )
+                    },
+                    label = { Text("Route Finder", style = MaterialTheme.typography.labelSmall) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    icon = {
+                        Icon(
                             imageVector = Icons.Default.Favorite,
                             contentDescription = "Favorites List"
                         )
@@ -118,12 +240,12 @@ fun TrainStatusScreen(
                     )
                 )
                 NavigationBarItem(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Info,
-                            contentDescription = "System Info"
+                            contentDescription = "Diagnostics"
                         )
                     },
                     label = { Text("Diagnostics", style = MaterialTheme.typography.labelSmall) },
@@ -286,6 +408,17 @@ fun TrainStatusScreen(
                 }
 
                 1 -> {
+                    RouteFinderPanel(
+                        viewModel = viewModel,
+                        onSelectTrain = { num ->
+                            viewModel.updateSearchQuery(num)
+                            viewModel.searchTrain(num)
+                            selectedTab = 0
+                        }
+                    )
+                }
+
+                2 -> {
                     Column(modifier = Modifier.fillMaxSize()) {
                         Row(
                             modifier = Modifier
@@ -321,7 +454,7 @@ fun TrainStatusScreen(
                     }
                 }
 
-                2 -> {
+                3 -> {
                     InfoPanel()
                 }
             }
@@ -472,15 +605,17 @@ fun IdlePanel(
                         
                         // Draw sleep bars
                         val sleepSpacing = 24.dp.toPx()
-                        var currentX = 0f
-                        while (currentX < width) {
-                            drawLine(
-                                color = sleeperColor,
-                                start = Offset(currentX, height * 0.25f),
-                                end = Offset(currentX, height * 0.75f),
-                                strokeWidth = 8f
-                            )
-                            currentX += sleepSpacing
+                        if (sleepSpacing > 0f) {
+                            val count = (width / sleepSpacing).toInt().coerceAtMost(100)
+                            for (i in 0..count) {
+                                val currentX = i * sleepSpacing
+                                drawLine(
+                                    color = sleeperColor,
+                                    start = Offset(currentX, height * 0.25f),
+                                    end = Offset(currentX, height * 0.75f),
+                                    strokeWidth = 8f
+                                )
+                            }
                         }
                     }
 
@@ -1424,6 +1559,12 @@ fun DelayBadge(
  * "Destination" -> Arrival Destination
  * "09:41" -> Single Arrival/Depart
  */
+/**
+ * Utility schedule duration extracter
+ * "08:3008:10" -> Depart "08:30", Arrive "08:10"
+ * "Destination" -> Arrival Destination
+ * "09:41" -> Single Arrival/Depart
+ */
 private fun parseTiming(timing: String): Pair<String?, String?> {
     val trimmed = timing.trim()
     if (trimmed.equals("Destination", ignoreCase = true)) {
@@ -1439,4 +1580,823 @@ private fun parseTiming(timing: String): Pair<String?, String?> {
         return Pair(dep, arr)
     }
     return Pair(trimmed, null)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RouteFinderPanel(
+    viewModel: TrainViewModel,
+    onSelectTrain: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val fromQuery by viewModel.fromQuery.collectAsStateWithLifecycle()
+    val toQuery by viewModel.toQuery.collectAsStateWithLifecycle()
+    val routeState by viewModel.routeSearchUiState.collectAsStateWithLifecycle()
+    val fullCatalog = remember { viewModel.getFullTrainCatalog() }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Upper Title Header
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = "Train Route Finder",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Enter Stations or Codes to Search & Track",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                    )
+                }
+            }
+        }
+
+        // Search Console Input Cards
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxWidth().padding(end = 48.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = fromQuery,
+                                onValueChange = viewModel::updateFromQuery,
+                                label = { Text("From Station (Source)", fontSize = 12.sp) },
+                                placeholder = { Text("e.g. Nagpur or NGP") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Home,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                )
+                            )
+
+                            StationSuggestionsRow(
+                                query = fromQuery,
+                                onSelectSuggestion = viewModel::updateFromQuery
+                            )
+
+                            OutlinedTextField(
+                                value = toQuery,
+                                onValueChange = viewModel::updateToQuery,
+                                label = { Text("To Station (Destination)", fontSize = 12.sp) },
+                                placeholder = { Text("e.g. Pune or PUNE") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Place,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.secondary
+                                    )
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(
+                                    onSearch = {
+                                        viewModel.searchRoutes(fromQuery, toQuery)
+                                    }
+                                ),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                )
+                            )
+
+                            StationSuggestionsRow(
+                                query = toQuery,
+                                onSelectSuggestion = viewModel::updateToQuery
+                            )
+                        }
+
+                        // Swap Button centered aligned on the right side
+                        IconButton(
+                            onClick = { viewModel.swapStations() },
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .size(40.dp)
+                                .background(MaterialTheme.colorScheme.secondaryContainer, shape = CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Swap stations",
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.clearRouteSearch()
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.weight(1f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                        ) {
+                            Text("Clear", fontWeight = FontWeight.SemiBold)
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.searchRoutes(fromQuery, toQuery)
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.weight(1.5f),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Search Trains", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Interactive States Representation for the query search
+        when (val state = routeState) {
+            is RouteSearchUiState.Idle -> {
+                // Show the original "Train List Catalog" as interactive grid cards
+                item {
+                    Text(
+                        text = "ALL AVAILABLE EXPRESS TRAINS",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.secondary,
+                        letterSpacing = 0.8.sp,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                    )
+                }
+
+                items(fullCatalog) { train ->
+                    CatalogTrainCard(train = train, onSelectTrain = onSelectTrain)
+                }
+            }
+
+            is RouteSearchUiState.Loading -> {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Searching rail registry networks...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            is RouteSearchUiState.Success -> {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "SEARCH RESULTS (${state.trains.size} found)",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.secondary,
+                            letterSpacing = 0.8.sp
+                        )
+
+                        Text(
+                            text = "${fromQuery.uppercase()} ⇄ ${toQuery.uppercase()}",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+                }
+
+                if (state.trains.isEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.12f)
+                            )
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.fillMaxWidth().padding(20.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = "No results",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "No direct trains found",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Try typing parts of the station names e.g., 'Gondia', 'Nagpur', 'Pune', 'Mumbai', 'Delhi', 'Howrah'.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    items(state.trains) { train ->
+                        CatalogTrainCard(train = train, onSelectTrain = onSelectTrain)
+                    }
+                }
+            }
+
+            is RouteSearchUiState.Error -> {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = state.message, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CatalogTrainCard(
+    train: TrainCatalogItem,
+    onSelectTrain: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onSelectTrain(train.trainNo) }
+            .padding(vertical = 4.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = train.trainNo,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                    Text(
+                        text = train.trainName,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                
+                IconButton(
+                    onClick = { onSelectTrain(train.trainNo) },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Track Live Status",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            // Timeline route brief
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(horizontalAlignment = Alignment.Start, modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = train.fromTime,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = train.source.substringBefore(" ("),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1.2f)) {
+                    Text(
+                        text = train.duration,
+                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.6f)
+                            .height(2.dp)
+                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                    )
+                    Text(
+                        text = "Runs: ${train.runsOn}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Column(horizontalAlignment = Alignment.End, modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = train.toTime,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = train.destination.substringBefore(" ("),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TermsAndConditionsDialog(
+    sharedPreferences: android.content.SharedPreferences,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var dontShowChecked by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Text(
+                    text = "Terms & Conditions",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Welcome to Where is my Train! Please review our Terms of Service to proceed.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "1. Accuracy: Train statuses are simulated via cached local registries. Runtimes may vary.\n" +
+                           "2. Contribution: Sudeep maintains this tracker openly for open-source contributions.\n" +
+                           "3. Privacy: Absolutely zero telemetry, logs or cookies are tracked.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                )
+                
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "Made with ❤️ by SUDEEP",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/SUDEEPBOTS"))
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            // ignore open error
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(vertical = 10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "GitHub Icon",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("SUDEEP GitHub Profile (Open Source)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { dontShowChecked = !dontShowChecked }
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.Start
+                ) {
+                    Checkbox(
+                        checked = dontShowChecked,
+                        onCheckedChange = { dontShowChecked = it }
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Don't show again",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (dontShowChecked) {
+                        sharedPreferences.edit().putBoolean("terms_accepted_dont_show", true).apply()
+                    }
+                    onDismiss()
+                },
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Accept & Close", fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
+@Composable
+fun UpdateDialog(
+    onDismiss: () -> Unit
+) {
+    var isInstalling by remember { mutableStateOf(false) }
+    var installProgress by remember { mutableStateOf(0f) }
+    var installComplete by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = { if (!isInstalling) onDismiss() },
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Text(
+                    text = "Update Available",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (installComplete) {
+                    Text(
+                        text = "🎉 Update v2.0.1 successfully installed! Please restart the app to enjoy new offline features.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else if (isInstalling) {
+                    Text(
+                        text = "Downloading & installing update modules of v2.0.1. Please keep the app open.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = { installProgress },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                    Text(
+                        text = "Progress: ${(installProgress * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.align(Alignment.End)
+                    )
+                } else {
+                    Text(
+                        text = "A brand new update v2.0.1 is ready for installation!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "• Precision offline tracking optimization\n" +
+                               "• Sudeep's open source dashboard controls\n" +
+                               "• Custom live map coordinates tracing\n" +
+                               "• General performance & GPS alignment",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (installComplete) {
+                Button(
+                    onClick = { onDismiss() },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Restart Now", fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Button(
+                    onClick = {
+                        isInstalling = true
+                        scope.launch {
+                            for (p in 1..100) {
+                                kotlinx.coroutines.delay(20)
+                                installProgress = p / 100f
+                            }
+                            installComplete = true
+                        }
+                    },
+                    enabled = !isInstalling,
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Install", fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            if (!isInstalling && !installComplete) {
+                TextButton(onClick = onDismiss) {
+                    Text("Later", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    )
+}
+
+data class StationSuggestion(val name: String, val code: String)
+
+val ALL_STATIONS = listOf(
+    StationSuggestion("New Delhi", "NDLS"),
+    StationSuggestion("Howrah", "HWH"),
+    StationSuggestion("Mumbai Central", "MMCT"),
+    StationSuggestion("Lokmanya Tilak Terminus", "LTT"),
+    StationSuggestion("Pune", "PUNE"),
+    StationSuggestion("Nagpur", "NGP"),
+    StationSuggestion("Gondia", "G"),
+    StationSuggestion("Bhopal", "BPL"),
+    StationSuggestion("Gwalior", "GWL"),
+    StationSuggestion("Kanpur", "CNB"),
+    StationSuggestion("Asansol", "ASN"),
+    StationSuggestion("Dhanbad", "DHN"),
+    StationSuggestion("Gaya", "GAYA"),
+    StationSuggestion("Prayagraj", "PRYJ"),
+    StationSuggestion("Mughalsarai", "DDU"),
+    StationSuggestion("Patna", "PNBE"),
+    StationSuggestion("Trivandrum", "TVC"),
+    StationSuggestion("Vijayawada", "BZA"),
+    StationSuggestion("Tirupati", "TPTY"),
+    StationSuggestion("Coimbatore", "CBE"),
+    StationSuggestion("Tumsar", "TMR"),
+    StationSuggestion("Bhandara", "BRD"),
+    StationSuggestion("Kamptee", "KP"),
+    StationSuggestion("Wardha", "WR"),
+    StationSuggestion("Badnera", "BD"),
+    StationSuggestion("Akola", "AK"),
+    StationSuggestion("Bhusaval", "BSL"),
+    StationSuggestion("Manmad", "MMR"),
+    StationSuggestion("Miraj", "MRJ"),
+    StationSuggestion("Kolhapur", "KOP"),
+    StationSuggestion("Kalyan", "KYN"),
+    StationSuggestion("Raipur", "R"),
+    StationSuggestion("Bilaspur", "BSP"),
+    StationSuggestion("Tatanagar", "TATA"),
+    StationSuggestion("Shalimar", "SHM"),
+    StationSuggestion("Borivali", "BVI"),
+    StationSuggestion("Surat", "ST"),
+    StationSuggestion("Vadodara", "BRC"),
+    StationSuggestion("Ratlam", "RTM"),
+    StationSuggestion("Kota", "KOTA"),
+    StationSuggestion("Mathura", "MTJ"),
+    StationSuggestion("Agra", "AGC"),
+    StationSuggestion("Jhansi", "VGLJ"),
+    StationSuggestion("Lalitpur", "LAR"),
+    StationSuggestion("Habibganj", "RKMP")
+)
+
+@Composable
+fun StationSuggestionsRow(
+    query: String,
+    onSelectSuggestion: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val suggestions = remember(query) {
+        val q = query.trim().lowercase()
+        if (q.length >= 1) {
+            ALL_STATIONS.filter { station ->
+                (station.name.lowercase().contains(q) || station.code.lowercase().contains(q)) &&
+                        !station.name.equals(query, ignoreCase = true) &&
+                        !station.code.equals(query, ignoreCase = true)
+            }.take(8)
+        } else {
+            emptyList()
+        }
+    }
+
+    AnimatedVisibility(
+        visible = suggestions.isNotEmpty(),
+        enter = fadeIn() + expandVertically(),
+        exit = fadeOut() + shrinkVertically(),
+        modifier = modifier
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+        ) {
+            Text(
+                text = "Suggestions:",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 2.dp)
+            )
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 2.dp)
+            ) {
+                items(suggestions) { suggestion ->
+                    CustomSuggestionChip(
+                        text = "${suggestion.name} (${suggestion.code})",
+                        onClick = { onSelectSuggestion(suggestion.name) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CustomSuggestionChip(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onClick() },
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Place,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+    }
 }
