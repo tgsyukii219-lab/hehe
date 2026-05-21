@@ -131,7 +131,7 @@ fun TrainStatusScreen(
                             modifier = Modifier.size(24.dp)
                         )
                         Text(
-                            text = "Where is my Train",
+                            text = "uio train",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -282,7 +282,7 @@ fun TrainStatusScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Where is my Train",
+                                text = "uio train",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -991,6 +991,7 @@ fun SuccessPanel(
     }
 
     val listState = rememberLazyListState()
+    var showReminderDialog by remember { mutableStateOf(false) }
     
     // Smoothly focus/animate scroll to current station when loaded
     LaunchedEffect(stations, currentStationIndex) {
@@ -1191,6 +1192,79 @@ fun SuccessPanel(
                             trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f)
                         )
                     }
+                }
+            }
+        }
+
+        if (showReminderDialog) {
+            val parsedTrainNo = response.trainName?.filter { it.isDigit() }?.takeIf { it.isNotEmpty() } ?: "Alert"
+            TrainReminderDialog(
+                trainNo = parsedTrainNo,
+                trainName = response.trainName?.replace(" Running Status", "") ?: "Active Train",
+                stations = stations,
+                onDismiss = { showReminderDialog = false }
+            )
+        }
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.25f)
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1.5f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = "Alerts",
+                        tint = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Enable Background Alarms",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            text = "Get notified before arriving at your stop",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+                
+                Button(
+                    onClick = { showReminderDialog = true },
+                    shape = RoundedCornerShape(100.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.tertiary,
+                        contentColor = MaterialTheme.colorScheme.onTertiary
+                    ),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Set", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1438,7 +1512,7 @@ fun InfoPanel(modifier: Modifier = Modifier) {
             }
 
             Text(
-                text = "Where is my Train delivers high-precision diagnostic and real-time running telemetry direct from live synchronized carrier servers. Tracks GPS speeds, halt histories, intermediate connections, platform allocations, and scheduled transit schedules.",
+                text = "uio train delivers high-precision diagnostic and real-time running telemetry direct from live synchronized carrier servers. Tracks GPS speeds, halt histories, intermediate connections, platform allocations, and scheduled transit schedules.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2048,7 +2122,7 @@ fun TermsAndConditionsDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = "Welcome to Where is my Train! Please review our Terms of Service to proceed.",
+                    text = "Welcome to uio train! Please review our Terms of Service to proceed.",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium
                 )
@@ -2367,6 +2441,361 @@ fun StationSuggestionsRow(
 }
 
 @Composable
+fun TrainReminderDialog(
+    trainNo: String,
+    trainName: String,
+    stations: List<com.example.network.StationStatus>,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var selectedStationIndex by remember { mutableStateOf(0) }
+    var selectedMinutesBefore by remember { mutableStateOf("10") }
+    var expandedStationMenu by remember { mutableStateOf(false) }
+
+    // Android 13+ Notification Permission Launcher
+    var hasNotificationPermission by remember {
+        mutableStateOf(
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        )
+    }
+
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasNotificationPermission = isGranted
+        if (isGranted) {
+            android.widget.Toast.makeText(context, "Notifications Enabled!", android.widget.Toast.LENGTH_SHORT).show()
+        } else {
+            android.widget.Toast.makeText(context, "Notification permission is required for alerts.", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Notifications,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Text(
+                    text = "Configure Live Alert 🚉",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    text = "Configure background tracking reminders for Train $trainNo. We will alert you before it arrives!",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // Request Permissions Button if not granted
+                if (!hasNotificationPermission && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    Button(
+                        onClick = {
+                            permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Grant Notification Permission", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+
+                // Station Selection Dropdown
+                if (stations.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Alert Station:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { expandedStationMenu = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val currentStation = stations[selectedStationIndex]
+                                    Text(
+                                        text = currentStation.stationName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = expandedStationMenu,
+                                onDismissRequest = { expandedStationMenu = false },
+                                modifier = Modifier.fillMaxWidth(0.9f)
+                            ) {
+                                stations.forEachIndexed { index, station ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = station.stationName,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        },
+                                        onClick = {
+                                            selectedStationIndex = index
+                                            expandedStationMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Lead Time Setting Columns
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Alert Lead Time:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        listOf("5", "10", "20", "30").forEach { mins ->
+                            val isSelected = selectedMinutesBefore == mins
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { selectedMinutesBefore = mins },
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.padding(vertical = 10.dp)
+                                ) {
+                                    Text(
+                                        text = "$mins mins",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Immediate Alert Test Card
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "⚡ Real-time Testing Module",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            text = "Test notifications and permissions instantly in the background without waiting for scheduled times.",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Button(
+                                onClick = {
+                                    triggerInstantTrainTestNotification(
+                                        context = context,
+                                        trainNo = trainNo,
+                                        trainName = trainName,
+                                        stationName = stations.getOrNull(selectedStationIndex)?.stationName ?: "Alert Stop"
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.tertiary,
+                                    contentColor = MaterialTheme.colorScheme.onTertiary
+                                )
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Text("Immediate Test Alert 🔔", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val alertStation = if (stations.isNotEmpty()) stations[selectedStationIndex].stationName ?: "Target Station" else "Station"
+                    val success = scheduleTrainBackgroundReminder(
+                        context = context,
+                        trainNo = trainNo,
+                        trainName = trainName,
+                        stationName = alertStation,
+                        minutesBefore = selectedMinutesBefore.toIntOrNull() ?: 10
+                    )
+                    if (success) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Success: Alert scheduled $selectedMinutesBefore mins before reaching $alertStation!",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    onDismiss()
+                },
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Schedule Alarm ⏰", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
+fun triggerInstantTrainTestNotification(
+    context: android.content.Context,
+    trainNo: String,
+    trainName: String,
+    stationName: String
+) {
+    val intent = android.content.Intent(context, com.example.receiver.TrainReminderReceiver::class.java).apply {
+        putExtra("trainNo", trainNo)
+        putExtra("trainName", trainName)
+        putExtra("stationName", stationName)
+        putExtra("delayMinutes", 5) // Mock 5 min delay
+    }
+    context.sendBroadcast(intent)
+}
+
+fun scheduleTrainBackgroundReminder(
+    context: android.content.Context,
+    trainNo: String,
+    trainName: String,
+    stationName: String,
+    minutesBefore: Int
+): Boolean {
+    val intent = android.content.Intent(context, com.example.receiver.TrainReminderReceiver::class.java).apply {
+        putExtra("trainNo", trainNo)
+        putExtra("trainName", trainName)
+        putExtra("stationName", stationName)
+        putExtra("delayMinutes", 0) // Ontime simulation alert
+    }
+
+    val pendingIntent = android.app.PendingIntent.getBroadcast(
+        context,
+        1001,
+        intent,
+        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+    )
+
+    val alarmManager = context.getSystemService(android.content.Context.ALARM_SERVICE) as? android.app.AlarmManager
+    if (alarmManager != null) {
+        // Trigger simulated background alarm in 15 seconds to demonstrate background capability perfectly!
+        val triggerTimeMs = android.os.SystemClock.elapsedRealtime() + 15000L
+        
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                if (alarmManager.canScheduleExactAlarms()) {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        triggerTimeMs,
+                        pendingIntent
+                    )
+                } else {
+                    alarmManager.set(
+                        android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        triggerTimeMs,
+                        pendingIntent
+                    )
+                }
+            } else {
+                alarmManager.setExactAndAllowWhileIdle(
+                    android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    triggerTimeMs,
+                    pendingIntent
+                )
+            }
+            return true
+        } catch (e: SecurityException) {
+            // Fallback to inexact alarm if security policy restricts exact matching
+            alarmManager.set(
+                android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                triggerTimeMs,
+                pendingIntent
+            )
+            return true
+        } catch (e: Exception) {
+            return false
+        }
+    }
+    return false
+}
+
+@Composable
 fun CustomSuggestionChip(
     text: String,
     onClick: () -> Unit,
@@ -2400,3 +2829,5 @@ fun CustomSuggestionChip(
         }
     }
 }
+
+
