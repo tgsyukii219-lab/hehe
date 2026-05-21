@@ -2524,7 +2524,7 @@ fun TrainReminderDialog(
                     }
                 }
 
-                // Station Selection Dialog / Non-blocking Picker
+                // Station Selection - Inline Non-blocking Picker
                 if (stations.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
@@ -2534,7 +2534,7 @@ fun TrainReminderDialog(
                             color = MaterialTheme.colorScheme.primary
                         )
                         OutlinedButton(
-                            onClick = { expandedStationMenu = true },
+                            onClick = { expandedStationMenu = !expandedStationMenu },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
@@ -2562,80 +2562,58 @@ fun TrainReminderDialog(
                         }
 
                         if (expandedStationMenu) {
-                            AlertDialog(
-                                onDismissRequest = { expandedStationMenu = false },
-                                title = {
-                                    Text(
-                                        text = "Select Alert Station 🚉",
-                                        fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.titleMedium
-                                    )
-                                },
-                                text = {
-                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text(
-                                            text = "Choose your destination station from the active transit route:",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Box(
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 160.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                            ) {
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    itemsIndexed(stations) { index, station ->
+                                        val isSelected = index == selectedStationIndex
+                                        Surface(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .height(1.dp)
-                                                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
-                                        )
-                                        LazyColumn(
-                                            modifier = Modifier
-                                                .heightIn(max = 280.dp)
-                                                .fillMaxWidth(),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .clickable {
+                                                    selectedStationIndex = index
+                                                    expandedStationMenu = false
+                                                },
+                                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                            shape = RoundedCornerShape(8.dp)
                                         ) {
-                                            itemsIndexed(stations) { index, station ->
-                                                val isSelected = index == selectedStationIndex
-                                                Surface(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .clickable {
-                                                            selectedStationIndex = index
-                                                            expandedStationMenu = false
-                                                        },
-                                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                                                    shape = RoundedCornerShape(8.dp)
-                                                ) {
-                                                    Row(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                                                        verticalAlignment = Alignment.CenterVertically
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Place,
-                                                            contentDescription = null,
-                                                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            modifier = Modifier.size(16.dp)
-                                                        )
-                                                        Spacer(modifier = Modifier.width(8.dp))
-                                                        Text(
-                                                            text = station.stationName,
-                                                            style = MaterialTheme.typography.bodyMedium,
-                                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis
-                                                        )
-                                                    }
-                                                }
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Place,
+                                                    contentDescription = null,
+                                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = station.stationName,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
                                             }
                                         }
                                     }
-                                },
-                                confirmButton = {},
-                                dismissButton = {
-                                    TextButton(onClick = { expandedStationMenu = false }) {
-                                        Text("Cancel", fontWeight = FontWeight.Bold)
-                                    }
                                 }
-                            )
+                            }
                         }
                     }
                 }
